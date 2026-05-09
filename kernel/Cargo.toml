@@ -43,6 +43,10 @@ delta_kernel_derive = { path = "../derive-macros", version = "0.22.0" }
 bytes = "1.10"
 chrono = "0.4.41"
 crc = "3.2.2"
+# `dunce::canonicalize` strips the `\\?\` verbatim prefix that `std::fs::canonicalize`
+# returns on Windows, so the result can be round-tripped through `Url::from_directory_path`.
+# On non-Windows targets it is a no-op pass-through to `std::fs::canonicalize`.
+dunce = "1.0.5"
 indexmap = "2.10.0"
 itertools = "0.14"
 percent-encoding = "2"
