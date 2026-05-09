@@ -137,7 +137,7 @@ async fn list_from_impl(
     // directory. Unfortunately, `Path` provides no easy way to check whether a name is
     // directory-like, because it strips trailing /, so we're reduced to manually checking the
     // original URL.
-    let offset = path.try_to_object_path()?;
+    let offset = Path::from_url_path(path.path())?;
     let prefix = if path.path().ends_with('/') {
         offset.clone()
     } else {
@@ -280,7 +280,7 @@ async fn put_impl(
 
 /// Native async implementation for head
 async fn head_impl(store: Arc<DynObjectStore>, url: Url) -> DeltaResult<FileMeta> {
-    let meta = store.head(&url.try_to_object_path()?).await?;
+    let meta = store.head(&Path::from_url_path(url.path())?).await?;
     Ok(FileMeta {
         location: url,
         last_modified: meta.last_modified.timestamp_millis(),
@@ -314,14 +314,14 @@ impl<E: TaskExecutor> StorageHandler for ObjectStoreStorageHandler<E> {
     }
 
     fn put(&self, path: &Url, data: Bytes, overwrite: bool) -> DeltaResult<()> {
-        let path = path.try_to_object_path()?;
+        let path = Path::from_url_path(path.path())?;
         self.task_executor
             .block_on(put_impl(self.inner.clone(), path, data, overwrite))
     }
 
     fn copy_atomic(&self, src: &Url, dest: &Url) -> DeltaResult<()> {
-        let src_path = src.try_to_object_path()?;
-        let dest_path = dest.try_to_object_path()?;
+        let src_path = Path::from_url_path(src.path())?;
+        let dest_path = Path::from_url_path(dest.path())?;
         let future = copy_atomic_impl(self.inner.clone(), src_path, dest_path);
         self.task_executor.block_on(future)
     }

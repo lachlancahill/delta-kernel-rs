@@ -25,6 +25,7 @@ use crate::engine::parquet_row_group_skipping::ParquetRowGroupSkipping;
 use crate::engine::{reader_options, writer_options};
 use crate::expressions::ColumnName;
 use crate::metrics::emit_parquet_read_completed;
+use crate::object_store::path::Path;
 use crate::object_store::{DynObjectStore, ObjectStoreExt as _};
 use crate::parquet::arrow::arrow_reader::{ArrowReaderMetadata, ParquetRecordBatchReaderBuilder};
 use crate::parquet::arrow::arrow_writer::ArrowWriter;
@@ -196,10 +197,11 @@ impl<E: TaskExecutor> DefaultParquetHandler<E> {
         }
         let path = path.join(&name)?;
 
-        let object_path = path.try_to_object_path()?;
-        self.store.put(&object_path, buffer.into()).await?;
+        self.store
+            .put(&Path::from_url_path(path.path())?, buffer.into())
+            .await?;
 
-        let metadata = self.store.head(&object_path).await?;
+        let metadata = self.store.head(&Path::from_url_path(path.path())?).await?;
         let modification_time = metadata.last_modified.timestamp_millis();
         if size != metadata.size {
             return Err(Error::generic(format!(
@@ -343,7 +345,7 @@ impl<E: TaskExecutor> ParquetHandler for DefaultParquetHandler<E> {
         let store = self.store.clone();
 
         self.task_executor.block_on(async move {
-            let path = location.try_to_object_path()?;
+            let path = Path::from_url_path(location.path())?;
 
             // Get first batch to initialize writer with schema
             let first_batch = data.next().ok_or_else(|| {
@@ -392,7 +394,7 @@ impl<E: TaskExecutor> ParquetHandler for DefaultParquetHandler<E> {
                     .map_err(|e| Error::generic(format!("Failed to read response bytes: {e}")))?;
                 ArrowReaderMetadata::load(&bytes, reader_options())?
             } else {
-                let path = location.try_to_object_path()?;
+                let path = Path::from_url_path(location.path())?;
                 let mut reader = ParquetObjectReader::new(store, path).with_file_size(file_size);
                 ArrowReaderMetadata::load_async(&mut reader, reader_options()).await?
             };
@@ -415,7 +417,7 @@ async fn open_parquet_file(
     file_meta: FileMeta,
 ) -> DeltaResult<BoxStream<'static, DeltaResult<RecordBatch>>> {
     let file_location = file_meta.location.to_string();
-    let path = file_meta.location.try_to_object_path()?;
+    let path = Path::from_url_path(file_meta.location.path())?;
 
     let mut reader = {
         use crate::object_store::ObjectStoreScheme;
@@ -595,7 +597,6 @@ mod tests {
     use crate::engine::default::DEFAULT_BATCH_SIZE;
     use crate::object_store::local::LocalFileSystem;
     use crate::object_store::memory::InMemory;
-    use crate::object_store::path::Path;
     use crate::parquet::arrow::{ARROW_SCHEMA_META_KEY, PARQUET_FIELD_ID_META_KEY};
     use crate::schema::{ColumnMetadataKey, MetadataValue};
     use crate::utils::current_time_ms;

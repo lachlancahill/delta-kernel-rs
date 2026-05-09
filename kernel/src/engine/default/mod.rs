@@ -19,13 +19,11 @@ use self::parquet::DefaultParquetHandler;
 use super::arrow_conversion::TryFromArrow as _;
 use super::arrow_data::ArrowEngineData;
 use super::arrow_expression::ArrowEvaluationHandler;
-use crate::object_store::path::Path;
 use crate::object_store::DynObjectStore;
 use crate::schema::Schema;
 use crate::transaction::WriteContext;
 use crate::{
-    DeltaResult, Engine, EngineData, Error, EvaluationHandler, JsonHandler, ParquetHandler,
-    StorageHandler,
+    DeltaResult, Engine, EngineData, EvaluationHandler, JsonHandler, ParquetHandler, StorageHandler,
 };
 
 pub mod executor;
@@ -325,15 +323,6 @@ trait UrlExt {
     // Check if a given url is a presigned url and can be used
     // to access the object store via simple http requests
     fn is_presigned(&self) -> bool;
-
-    /// Convert this URL into an [`object_store::path::Path`] suitable for the underlying store.
-    ///
-    /// For `file://` URLs this round-trips through [`Url::to_file_path`] so that Windows UNC
-    /// hosts (`file://server/share/foo` <-> `\\server\share\foo`) are preserved. Using
-    /// [`Url::path`] directly silently drops the host and would corrupt UNC locations. For
-    /// every other scheme this delegates to [`Path::from_url_path`], which percent-decodes
-    /// each segment.
-    fn try_to_object_path(&self) -> DeltaResult<Path>;
 }
 
 impl UrlExt for Url {
@@ -357,21 +346,6 @@ impl UrlExt for Url {
             && self
                 .query_pairs()
                 .any(|(k, _)| PRESIGNED_KEYS.iter().any(|p| k.eq_ignore_ascii_case(p)))
-    }
-
-    fn try_to_object_path(&self) -> DeltaResult<Path> {
-        if self.scheme() == "file" {
-            // `to_file_path` rebuilds an absolute filesystem path from the URL, including the
-            // UNC host (if any), and percent-decodes each segment. `from_absolute_path` then
-            // produces a forward-slash object_store path without re-decoding.
-            let file_path = self.to_file_path().map_err(|_| {
-                Error::invalid_table_location(format!("Invalid file URL: {self}"))
-            })?;
-            Path::from_absolute_path(file_path)
-                .map_err(|e| Error::invalid_table_location(format!("Invalid file path: {e}")))
-        } else {
-            Ok(Path::from_url_path(self.path())?)
-        }
     }
 }
 
@@ -466,57 +440,5 @@ mod tests {
 
         let url = Url::parse("https://example.com").unwrap();
         assert!(!url.is_presigned());
-    }
-
-    #[test]
-    fn test_try_to_object_path_non_file_schemes() {
-        // Cloud schemes go through `Path::from_url_path`, which percent-decodes segments.
-        let url = Url::parse("s3://bucket/some%20key/file.parquet").unwrap();
-        let path = url.try_to_object_path().unwrap();
-        assert_eq!(path.as_ref(), "some key/file.parquet");
-
-        let url = Url::parse("memory:///foo/bar").unwrap();
-        let path = url.try_to_object_path().unwrap();
-        assert_eq!(path.as_ref(), "foo/bar");
-    }
-
-    #[test]
-    fn test_try_to_object_path_file_scheme() {
-        // `file:///` URLs round-trip through `to_file_path`/`from_absolute_path`. The UNC case
-        // (`file://server/share/...` <-> `\\server\share\...`) flows through the same path on
-        // Windows but cannot be exercised in a portable unit test.
-        let tmp = tempfile::tempdir().unwrap();
-        let url = Url::from_directory_path(tmp.path()).unwrap();
-        let path = url.try_to_object_path().unwrap();
-        let expected = Path::from_absolute_path(tmp.path()).unwrap();
-        assert_eq!(path, expected);
-    }
-
-    #[test]
-    fn test_try_to_object_path_file_scheme_with_percent_encoding() {
-        // `from_directory_path` percent-encodes spaces; `to_file_path` decodes them again.
-        // The resulting object_store path should contain the literal space, not `%20`.
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("name with spaces");
-        std::fs::create_dir(&dir).unwrap();
-        let url = Url::from_directory_path(&dir).unwrap();
-        assert!(url.as_str().contains("%20"), "URL should be percent-encoded: {url}");
-        let path = url.try_to_object_path().unwrap();
-        let expected = Path::from_absolute_path(&dir).unwrap();
-        assert_eq!(path, expected);
-    }
-
-    /// On non-Windows platforms a `file://` URL with a non-empty/non-localhost host is
-    /// invalid (RFC 8089). Confirm the helper surfaces a clear error rather than silently
-    /// dropping the host as `Url::path()` would have.
-    #[cfg(not(windows))]
-    #[test]
-    fn test_try_to_object_path_file_scheme_with_host_errors_on_posix() {
-        let url = Url::parse("file://hostname/share/path/").unwrap();
-        let err = url.try_to_object_path().unwrap_err();
-        assert!(
-            matches!(err, Error::InvalidTableLocation(_)),
-            "expected InvalidTableLocation, got {err:?}"
-        );
     }
 }
