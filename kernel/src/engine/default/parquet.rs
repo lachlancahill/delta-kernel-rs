@@ -25,7 +25,6 @@ use crate::engine::parquet_row_group_skipping::ParquetRowGroupSkipping;
 use crate::engine::{reader_options, writer_options};
 use crate::expressions::ColumnName;
 use crate::metrics::emit_parquet_read_completed;
-use crate::object_store::path::Path;
 use crate::object_store::{DynObjectStore, ObjectStoreExt as _};
 use crate::parquet::arrow::arrow_reader::{ArrowReaderMetadata, ParquetRecordBatchReaderBuilder};
 use crate::parquet::arrow::arrow_writer::ArrowWriter;
@@ -596,6 +595,7 @@ mod tests {
     use crate::engine::default::DEFAULT_BATCH_SIZE;
     use crate::object_store::local::LocalFileSystem;
     use crate::object_store::memory::InMemory;
+    use crate::object_store::path::Path;
     use crate::parquet::arrow::{ARROW_SCHEMA_META_KEY, PARQUET_FIELD_ID_META_KEY};
     use crate::schema::{ColumnMetadataKey, MetadataValue};
     use crate::utils::current_time_ms;

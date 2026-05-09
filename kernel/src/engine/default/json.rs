@@ -20,7 +20,6 @@ use crate::engine::arrow_utils::{
 };
 use crate::engine_data::FilteredEngineData;
 use crate::metrics::emit_json_read_completed;
-use crate::object_store::path::Path;
 use crate::object_store::{self, DynObjectStore, GetResultPayload, ObjectStoreExt as _, PutMode};
 use crate::schema::SchemaRef;
 use crate::{
@@ -289,6 +288,7 @@ mod tests {
     };
     use crate::object_store::local::LocalFileSystem;
     use crate::object_store::memory::InMemory;
+    use crate::object_store::path::Path;
     #[cfg(any(not(feature = "arrow-57"), feature = "arrow-58"))]
     use crate::object_store::{CopyOptions, ObjectStore};
     use crate::object_store::{
