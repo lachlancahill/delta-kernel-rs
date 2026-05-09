@@ -197,11 +197,10 @@ impl<E: TaskExecutor> DefaultParquetHandler<E> {
         }
         let path = path.join(&name)?;
 
-        self.store
-            .put(&Path::from_url_path(path.path())?, buffer.into())
-            .await?;
+        let object_path = path.try_to_object_path()?;
+        self.store.put(&object_path, buffer.into()).await?;
 
-        let metadata = self.store.head(&Path::from_url_path(path.path())?).await?;
+        let metadata = self.store.head(&object_path).await?;
         let modification_time = metadata.last_modified.timestamp_millis();
         if size != metadata.size {
             return Err(Error::generic(format!(
@@ -345,7 +344,7 @@ impl<E: TaskExecutor> ParquetHandler for DefaultParquetHandler<E> {
         let store = self.store.clone();
 
         self.task_executor.block_on(async move {
-            let path = Path::from_url_path(location.path())?;
+            let path = location.try_to_object_path()?;
 
             // Get first batch to initialize writer with schema
             let first_batch = data.next().ok_or_else(|| {
@@ -394,7 +393,7 @@ impl<E: TaskExecutor> ParquetHandler for DefaultParquetHandler<E> {
                     .map_err(|e| Error::generic(format!("Failed to read response bytes: {e}")))?;
                 ArrowReaderMetadata::load(&bytes, reader_options())?
             } else {
-                let path = Path::from_url_path(location.path())?;
+                let path = location.try_to_object_path()?;
                 let mut reader = ParquetObjectReader::new(store, path).with_file_size(file_size);
                 ArrowReaderMetadata::load_async(&mut reader, reader_options()).await?
             };
@@ -417,7 +416,7 @@ async fn open_parquet_file(
     file_meta: FileMeta,
 ) -> DeltaResult<BoxStream<'static, DeltaResult<RecordBatch>>> {
     let file_location = file_meta.location.to_string();
-    let path = Path::from_url_path(file_meta.location.path())?;
+    let path = file_meta.location.try_to_object_path()?;
 
     let mut reader = {
         use crate::object_store::ObjectStoreScheme;

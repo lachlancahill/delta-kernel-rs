@@ -10,6 +10,7 @@ use futures::{ready, StreamExt, TryStreamExt};
 use url::Url;
 
 use super::executor::TaskExecutor;
+use super::UrlExt;
 use crate::arrow::datatypes::SchemaRef as ArrowSchemaRef;
 use crate::arrow::json::ReaderBuilder;
 use crate::arrow::record_batch::RecordBatch;
@@ -138,7 +139,7 @@ async fn write_json_file_impl(
         PutMode::Create
     };
 
-    let path = Path::from_url_path(path.path())?;
+    let path = path.try_to_object_path()?;
     let result = store.put_opts(&path, buffer.into(), put_mode.into()).await;
     result.map_err(|e| match e {
         object_store::Error::AlreadyExists { .. } => Error::FileAlreadyExists(path.to_string()),
@@ -204,7 +205,7 @@ async fn open_json_file(
     batch_size: usize,
     file_meta: FileMeta,
 ) -> DeltaResult<BoxStream<'static, DeltaResult<RecordBatch>>> {
-    let path = Path::from_url_path(file_meta.location.path())?;
+    let path = file_meta.location.try_to_object_path()?;
     let result = store.get(&path).await?;
     let builder = ReaderBuilder::new(schema)
         .with_batch_size(batch_size)
