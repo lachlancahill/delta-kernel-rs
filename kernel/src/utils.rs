@@ -40,7 +40,13 @@ pub(crate) fn try_parse_uri(uri: impl AsRef<str>) -> DeltaResult<Url> {
                     "{path:?} is not a directory"
                 )));
             }
-            let path = std::fs::canonicalize(path).map_err(|err| {
+            // Use `dunce::canonicalize` rather than `std::fs::canonicalize`. On Windows the
+            // latter returns extended-length verbatim paths (e.g. `\\?\C:\foo` or
+            // `\\?\UNC\server\share\foo`), which `Url::from_directory_path` cannot encode.
+            // `dunce` strips that prefix when it is safe to do so, leaving the path in a form
+            // both `Url::from_directory_path` and `Url::to_file_path` can round-trip. On
+            // non-Windows targets `dunce::canonicalize` delegates to `std::fs::canonicalize`.
+            let path = dunce::canonicalize(path).map_err(|err| {
                 let msg = format!("Invalid table location: {uri} Error: {err:?}");
                 Error::InvalidTableLocation(msg)
             })?;
